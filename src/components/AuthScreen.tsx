@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { Profile, Role } from '@/lib/types';
 import { initialProfiles } from '@/lib/initialData';
+import { sanitizeInput } from '@/lib/security';
 import {
   ShieldCheck,
   Mail,
@@ -14,6 +15,7 @@ import {
   AlertCircle,
   CheckCircle2,
   Sparkles,
+  Heart,
 } from 'lucide-react';
 
 interface AuthScreenProps {
@@ -62,7 +64,6 @@ export function AuthScreen({ onAuthenticated, darkMode }: AuthScreenProps) {
       });
 
       if (authError) {
-        // Check for common auth error responses
         if (
           authError.message.toLowerCase().includes('fetch failed') ||
           authError.name === 'AuthRetryableFetchError' ||
@@ -82,14 +83,15 @@ export function AuthScreen({ onAuthenticated, darkMode }: AuthScreenProps) {
 
       if (data.session && data.user) {
         const metadata = data.user.user_metadata || {};
+        const userRole = (metadata.role as Role) || role;
         const profile: Profile = {
           id: data.user.id,
           email: data.user.email || cleanEmail,
-          full_name: metadata.full_name || 'Dr. ' + cleanEmail.split('@')[0],
-          role: (metadata.role as Role) || 'doctor',
-          specialty: metadata.specialty || 'General Medicine',
+          full_name: metadata.full_name || (userRole === 'doctor' ? 'Dr. ' : '') + cleanEmail.split('@')[0],
+          role: userRole,
+          specialty: metadata.specialty || (userRole === 'patient' ? 'Patient / Family' : 'General Medicine'),
           points: 100,
-          avatar_color: '#0ea5e9',
+          avatar_color: userRole === 'patient' ? '#10b981' : userRole === 'admin' ? '#8b5cf6' : '#0ea5e9',
         };
         onAuthenticated(profile);
       }
@@ -106,11 +108,12 @@ export function AuthScreen({ onAuthenticated, darkMode }: AuthScreenProps) {
     setError(null);
     setSuccess(null);
 
-    const cleanEmail = email.trim();
-    const cleanName = fullName.trim();
+    const cleanEmail = sanitizeInput(email.trim());
+    const cleanName = sanitizeInput(fullName.trim());
+    const cleanSpecialty = sanitizeInput(specialty);
 
     if (!cleanName) {
-      setError('Please enter your full name and medical credentials.');
+      setError('Please enter your full name and clinical credentials.');
       return;
     }
     if (!cleanEmail || !validateEmail(cleanEmail)) {
@@ -129,14 +132,13 @@ export function AuthScreen({ onAuthenticated, darkMode }: AuthScreenProps) {
     setLoading(true);
 
     try {
-      // Execute real Supabase registration
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: cleanEmail,
         password: password,
         options: {
           data: {
             full_name: cleanName,
-            specialty: specialty,
+            specialty: cleanSpecialty,
             role: role,
           },
         },
@@ -160,19 +162,17 @@ export function AuthScreen({ onAuthenticated, darkMode }: AuthScreenProps) {
 
       if (data.user) {
         if (data.session) {
-          // Direct login after signup (email confirmation disabled)
           const profile: Profile = {
             id: data.user.id,
             email: cleanEmail,
             full_name: cleanName,
             role: role,
-            specialty: specialty,
+            specialty: cleanSpecialty,
             points: 100,
-            avatar_color: '#10b981',
+            avatar_color: role === 'patient' ? '#10b981' : role === 'admin' ? '#8b5cf6' : '#0ea5e9',
           };
           onAuthenticated(profile);
         } else {
-          // Email confirmation required
           setSuccess('Account created successfully! Please sign in with your clinical credentials.');
           setMode('login');
         }
@@ -201,8 +201,95 @@ export function AuthScreen({ onAuthenticated, darkMode }: AuthScreenProps) {
           <div className="brand-mark large">
             <ShieldCheck size={28} />
           </div>
-          <h2>AntiSteward</h2>
+          <h2>AntiSteward AMS</h2>
           <p>AI Clinical Intelligence & Antimicrobial Stewardship Platform</p>
+        </div>
+
+        {/* Role Selection on Login Screen */}
+        <div style={{ marginBottom: '18px' }}>
+          <div style={{ fontSize: '11px', fontWeight: 700, color: '#526e82', marginBottom: '7px', textAlign: 'center' }}>
+            SELECT TARGET PORTAL
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
+            <button
+              type="button"
+              aria-label="Select Doctor Portal"
+              onClick={() => {
+                setRole('doctor');
+                if (mode === 'login') setEmail('sarah.chen@hospital.org');
+              }}
+              style={{
+                border: role === 'doctor' ? '2px solid #0ea5a6' : '1px solid #dce8ee',
+                background: role === 'doctor' ? '#f0fbfb' : '#fff',
+                color: role === 'doctor' ? '#0b7b83' : '#647c8d',
+                borderRadius: '8px',
+                padding: '9px 4px',
+                fontSize: '11px',
+                fontWeight: 700,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '4px',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+              }}
+            >
+              <Stethoscope size={16} />
+              <span>Doctor</span>
+            </button>
+            <button
+              type="button"
+              aria-label="Select Patient Portal"
+              onClick={() => {
+                setRole('patient');
+                if (mode === 'login') setEmail('sofia.martinez@patient.org');
+              }}
+              style={{
+                border: role === 'patient' ? '2px solid #10b981' : '1px solid #dce8ee',
+                background: role === 'patient' ? '#f0faf4' : '#fff',
+                color: role === 'patient' ? '#1b7d48' : '#647c8d',
+                borderRadius: '8px',
+                padding: '9px 4px',
+                fontSize: '11px',
+                fontWeight: 700,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '4px',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+              }}
+            >
+              <Heart size={16} />
+              <span>Patient</span>
+            </button>
+            <button
+              type="button"
+              aria-label="Select Admin Portal"
+              onClick={() => {
+                setRole('admin');
+                if (mode === 'login') setEmail('admin@hospital.org');
+              }}
+              style={{
+                border: role === 'admin' ? '2px solid #8b5cf6' : '1px solid #dce8ee',
+                background: role === 'admin' ? '#f7f4fd' : '#fff',
+                color: role === 'admin' ? '#6834c8' : '#647c8d',
+                borderRadius: '8px',
+                padding: '9px 4px',
+                fontSize: '11px',
+                fontWeight: 700,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '4px',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+              }}
+            >
+              <ShieldCheck size={16} />
+              <span>Admin</span>
+            </button>
+          </div>
         </div>
 
         <div className="auth-tabs">
@@ -224,49 +311,67 @@ export function AuthScreen({ onAuthenticated, darkMode }: AuthScreenProps) {
               setError(null);
             }}
           >
-            Register Clinician
+            Register Account
           </button>
         </div>
 
         {error && (
-          <div className="auth-alert error">
+          <div className="auth-alert error" role="alert" id="auth-error">
             <AlertCircle size={17} />
             <span>{error}</span>
           </div>
         )}
 
         {success && (
-          <div className="auth-alert success">
+          <div className="auth-alert success" role="status" id="auth-success">
             <CheckCircle2 size={17} />
             <span>{success}</span>
           </div>
         )}
 
         {mode === 'login' ? (
-          <form onSubmit={handleLogin} className="auth-form">
-            <label>
-              Clinical Email
+          <form onSubmit={handleLogin} className="auth-form" noValidate={false}>
+            <div>
+              <label htmlFor="auth-email" style={{ display: 'block', marginBottom: '6px', fontSize: '11px', fontWeight: 600, color: '#526e82' }}>
+                Clinical Email Address
+              </label>
               <div className="input-group">
-                <Mail size={16} className="input-icon" />
+                <Mail size={16} className="input-icon" aria-hidden="true" />
                 <input
+                  id="auth-email"
                   type="email"
                   required
-                  placeholder="name@hospital.org"
+                  aria-required="true"
+                  aria-invalid={error ? 'true' : 'false'}
+                  aria-describedby={error ? 'auth-error' : undefined}
+                  placeholder={
+                    role === 'doctor'
+                      ? 'sarah.chen@hospital.org'
+                      : role === 'patient'
+                      ? 'sofia.martinez@patient.org'
+                      : 'admin@hospital.org'
+                  }
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   autoComplete="email"
                 />
               </div>
-            </label>
+            </div>
 
-            <label>
-              Password
+            <div style={{ marginTop: '12px' }}>
+              <label htmlFor="auth-password" style={{ display: 'block', marginBottom: '6px', fontSize: '11px', fontWeight: 600, color: '#526e82' }}>
+                Password
+              </label>
               <div className="input-group">
-                <Lock size={16} className="input-icon" />
+                <Lock size={16} className="input-icon" aria-hidden="true" />
                 <input
+                  id="auth-password"
                   type={showPassword ? 'text' : 'password'}
                   required
-                  placeholder="Enter your password"
+                  aria-required="true"
+                  aria-invalid={error ? 'true' : 'false'}
+                  aria-describedby={error ? 'auth-error' : undefined}
+                  placeholder="Enter your account password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   autoComplete="current-password"
@@ -280,82 +385,109 @@ export function AuthScreen({ onAuthenticated, darkMode }: AuthScreenProps) {
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
-            </label>
+            </div>
 
-            <button type="submit" className="primary-button auth-submit" disabled={loading}>
+            <button type="submit" className="primary-button auth-submit" disabled={loading} style={{ marginTop: '16px' }}>
               {loading ? (
                 <>
                   <span className="mini-spinner" /> Authenticating...
                 </>
               ) : (
                 <>
-                  Sign In to Workspace <ChevronRight size={16} />
+                  Sign In to {role === 'doctor' ? 'Doctor' : role === 'patient' ? 'Patient' : 'Admin'} Portal <ChevronRight size={16} />
                 </>
               )}
             </button>
           </form>
         ) : (
-          <form onSubmit={handleSignup} className="auth-form">
-            <label>
-              Full Name & Title
+          <form onSubmit={handleSignup} className="auth-form" noValidate={false}>
+            <div>
+              <label htmlFor="reg-fullname" style={{ display: 'block', marginBottom: '6px', fontSize: '11px', fontWeight: 600, color: '#526e82' }}>
+                Full Name
+              </label>
               <div className="input-group">
-                <User size={16} className="input-icon" />
+                <User size={16} className="input-icon" aria-hidden="true" />
                 <input
+                  id="reg-fullname"
                   type="text"
                   required
-                  placeholder="Dr. Sarah Chen, MD"
+                  aria-required="true"
+                  placeholder={role === 'doctor' ? 'Dr. Sarah Chen, MD' : role === 'patient' ? 'Sofia Martinez' : 'Dr. Robert Thompson'}
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
+                  autoComplete="name"
                 />
               </div>
-            </label>
-
-            <div className="form-grid">
-              <label>
-                Role
-                <select value={role} onChange={(e) => setRole(e.target.value as Role)}>
-                  <option value="doctor">Doctor / Prescriber</option>
-                  <option value="admin">Stewardship Admin</option>
-                </select>
-              </label>
-
-              <label>
-                Medical Specialty
-                <select value={specialty} onChange={(e) => setSpecialty(e.target.value)}>
-                  <option value="Infectious Disease">Infectious Disease</option>
-                  <option value="Internal Medicine">Internal Medicine</option>
-                  <option value="Critical Care (ICU)">Critical Care (ICU)</option>
-                  <option value="Pulmonology">Pulmonology</option>
-                  <option value="Clinical Microbiology">Clinical Microbiology</option>
-                  <option value="Clinical Pharmacy">Clinical Pharmacy</option>
-                  <option value="General Surgery">General Surgery</option>
-                  <option value="Emergency Medicine">Emergency Medicine</option>
-                </select>
-              </label>
             </div>
 
-            <label>
-              Hospital Email
+            <div className="form-grid" style={{ marginTop: '12px' }}>
+              <div>
+                <label htmlFor="reg-role" style={{ display: 'block', marginBottom: '6px', fontSize: '11px', fontWeight: 600, color: '#526e82' }}>
+                  Portal Role
+                </label>
+                <select id="reg-role" value={role} onChange={(e) => setRole(e.target.value as Role)}>
+                  <option value="doctor">Doctor / Prescriber</option>
+                  <option value="patient">Patient / Family</option>
+                  <option value="admin">Stewardship Admin</option>
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="reg-specialty" style={{ display: 'block', marginBottom: '6px', fontSize: '11px', fontWeight: 600, color: '#526e82' }}>
+                  Specialty / Department
+                </label>
+                <select id="reg-specialty" value={specialty} onChange={(e) => setSpecialty(e.target.value)}>
+                  {role === 'patient' ? (
+                    <>
+                      <option value="Patient / Family">Inpatient Care</option>
+                      <option value="Outpatient Follow-up">Outpatient Follow-up</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="Infectious Disease">Infectious Disease</option>
+                      <option value="Internal Medicine">Internal Medicine</option>
+                      <option value="Critical Care (ICU)">Critical Care (ICU)</option>
+                      <option value="Clinical Microbiology">Clinical Microbiology</option>
+                      <option value="Clinical Pharmacy">Clinical Pharmacy</option>
+                      <option value="General Surgery">General Surgery</option>
+                      <option value="Emergency Medicine">Emergency Medicine</option>
+                      <option value="Stewardship Director">Stewardship Director</option>
+                    </>
+                  )}
+                </select>
+              </div>
+            </div>
+
+            <div style={{ marginTop: '12px' }}>
+              <label htmlFor="reg-email" style={{ display: 'block', marginBottom: '6px', fontSize: '11px', fontWeight: 600, color: '#526e82' }}>
+                Email Address
+              </label>
               <div className="input-group">
-                <Mail size={16} className="input-icon" />
+                <Mail size={16} className="input-icon" aria-hidden="true" />
                 <input
+                  id="reg-email"
                   type="email"
                   required
-                  placeholder="doctor@hospital.org"
+                  aria-required="true"
+                  placeholder="name@hospital.org"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   autoComplete="email"
                 />
               </div>
-            </label>
+            </div>
 
-            <label>
-              Password (min. 6 characters)
+            <div style={{ marginTop: '12px' }}>
+              <label htmlFor="reg-password" style={{ display: 'block', marginBottom: '6px', fontSize: '11px', fontWeight: 600, color: '#526e82' }}>
+                Password (min. 6 characters)
+              </label>
               <div className="input-group">
-                <Lock size={16} className="input-icon" />
+                <Lock size={16} className="input-icon" aria-hidden="true" />
                 <input
+                  id="reg-password"
                   type={showPassword ? 'text' : 'password'}
                   required
+                  aria-required="true"
                   placeholder="Create password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -370,15 +502,19 @@ export function AuthScreen({ onAuthenticated, darkMode }: AuthScreenProps) {
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
-            </label>
+            </div>
 
-            <label>
-              Confirm Password
+            <div style={{ marginTop: '12px' }}>
+              <label htmlFor="reg-confirm-password" style={{ display: 'block', marginBottom: '6px', fontSize: '11px', fontWeight: 600, color: '#526e82' }}>
+                Confirm Password
+              </label>
               <div className="input-group">
-                <Lock size={16} className="input-icon" />
+                <Lock size={16} className="input-icon" aria-hidden="true" />
                 <input
+                  id="reg-confirm-password"
                   type={showConfirmPassword ? 'text' : 'password'}
                   required
+                  aria-required="true"
                   placeholder="Repeat your password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
@@ -393,16 +529,16 @@ export function AuthScreen({ onAuthenticated, darkMode }: AuthScreenProps) {
                   {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
-            </label>
+            </div>
 
-            <button type="submit" className="primary-button auth-submit" disabled={loading}>
+            <button type="submit" className="primary-button auth-submit" disabled={loading} style={{ marginTop: '16px' }}>
               {loading ? (
                 <>
                   <span className="mini-spinner" /> Creating Account...
                 </>
               ) : (
                 <>
-                  Register Account <ChevronRight size={16} />
+                  Register {role === 'doctor' ? 'Clinician' : role === 'patient' ? 'Patient' : 'Administrator'} <ChevronRight size={16} />
                 </>
               )}
             </button>
@@ -410,7 +546,7 @@ export function AuthScreen({ onAuthenticated, darkMode }: AuthScreenProps) {
         )}
 
         <div className="auth-divider">
-          <span>Or access clinical evaluation mode</span>
+          <span>Quick Evaluation Demo Logins</span>
         </div>
 
         <div className="demo-accounts">
@@ -418,13 +554,14 @@ export function AuthScreen({ onAuthenticated, darkMode }: AuthScreenProps) {
             type="button"
             className="demo-account-card"
             onClick={() => loginAsDemo(initialProfiles[0])}
+            aria-label="Demo login as Dr. Sarah Chen, Doctor"
           >
             <div className="demo-avatar" style={{ background: initialProfiles[0].avatar_color }}>
               SC
             </div>
             <div>
               <strong>Dr. Sarah Chen (Doctor)</strong>
-              <span>Infectious Disease Specialist · Demo Profile</span>
+              <span>Infectious Disease Specialist · Doctor Portal Demo</span>
             </div>
             <Stethoscope size={16} className="demo-icon" />
           </button>
@@ -432,16 +569,33 @@ export function AuthScreen({ onAuthenticated, darkMode }: AuthScreenProps) {
           <button
             type="button"
             className="demo-account-card"
+            onClick={() => loginAsDemo(initialProfiles[2])}
+            aria-label="Demo login as Sofia Martinez, Patient"
+          >
+            <div className="demo-avatar" style={{ background: initialProfiles[2].avatar_color }}>
+              SM
+            </div>
+            <div>
+              <strong>Sofia Martinez (Patient)</strong>
+              <span>MRN-88412 · Patient Portal Demo</span>
+            </div>
+            <Heart size={16} style={{ color: '#10b981', flexShrink: 0 }} />
+          </button>
+
+          <button
+            type="button"
+            className="demo-account-card"
             onClick={() => loginAsDemo(initialProfiles[1])}
+            aria-label="Demo login as Dr. Robert Thompson, Admin"
           >
             <div className="demo-avatar" style={{ background: initialProfiles[1].avatar_color }}>
               RT
             </div>
             <div>
               <strong>Dr. Robert Thompson (Admin)</strong>
-              <span>Stewardship Committee Director · Demo Profile</span>
+              <span>Stewardship Committee Director · Admin Portal Demo</span>
             </div>
-            <ShieldCheck size={16} className="demo-icon" />
+            <ShieldCheck size={16} style={{ color: '#8b5cf6', flexShrink: 0 }} />
           </button>
         </div>
 
@@ -453,3 +607,4 @@ export function AuthScreen({ onAuthenticated, darkMode }: AuthScreenProps) {
     </div>
   );
 }
+

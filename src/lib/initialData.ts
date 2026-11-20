@@ -1,4 +1,14 @@
-import type { Alert, CaseReview, Patient, Prescription, Profile, QuizQuestion } from './types';
+import type {
+  Alert,
+  CaseReview,
+  Patient,
+  PatientAppointment,
+  PatientNotification,
+  Prescription,
+  Profile,
+  QuizQuestion,
+  StewardshipReport,
+} from './types';
 
 export const initialProfiles: Profile[] = [
   {
@@ -9,15 +19,28 @@ export const initialProfiles: Profile[] = [
     specialty: 'Infectious Disease',
     points: 1240,
     avatar_color: '#0ea5e9',
+    department: 'Department of Infectious Diseases',
   },
   {
     id: 'a2bb45ca-8c1e-450e-b8d1-7299a997ef01',
-    email: 'robert.thompson@hospital.org',
+    email: 'admin@hospital.org',
     full_name: 'Dr. Robert Thompson',
     role: 'admin',
     specialty: 'Stewardship Director',
     points: 650,
-    avatar_color: '#14b8a6',
+    avatar_color: '#8b5cf6',
+    department: 'Hospital Pharmacy & Therapeutics Committee',
+  },
+  {
+    id: '11111111-1111-1111-1111-111111111111',
+    email: 'sofia.martinez@patient.org',
+    full_name: 'Sofia Martinez',
+    role: 'patient',
+    specialty: 'Patient / Family',
+    points: 100,
+    avatar_color: '#10b981',
+    mrn: 'MRN-88412',
+    department: 'Inpatient ICU / Step-Down',
   },
 ];
 
@@ -317,3 +340,123 @@ export const initialQuestions: QuizQuestion[] = [
     explanation: 'Asymptomatic bacteriuria (ASB) does not benefit from antibiotic therapy in the absence of pregnancy or urological procedures with mucosal bleeding, and treating it promotes antimicrobial resistance.',
   },
 ];
+
+export const initialAppointments: PatientAppointment[] = [
+  {
+    id: 'apt-001',
+    patient_id: '11111111-1111-1111-1111-111111111111',
+    doctor_name: 'Dr. Sarah Chen',
+    specialty: 'Infectious Disease Specialist',
+    date_time: 'Tomorrow, 10:30 AM',
+    location: 'Main Hospital · Outpatient Wing, Room 302',
+    purpose: 'Post-Urosepsis Antibiotic Step-Down & Renal Safety Follow-up',
+    status: 'Scheduled',
+  },
+  {
+    id: 'apt-002',
+    patient_id: '11111111-1111-1111-1111-111111111111',
+    doctor_name: 'Dr. Robert Thompson',
+    specialty: 'Stewardship Committee Director',
+    date_time: 'Friday, 2:00 PM',
+    location: 'Clinical Microbiology & Stewardship Center',
+    purpose: 'Final AST Culture Review & Discontinuation Clearance',
+    status: 'Upcoming',
+  },
+];
+
+export const initialNotifications: PatientNotification[] = [
+  {
+    id: 'notif-001',
+    patient_id: '11111111-1111-1111-1111-111111111111',
+    title: 'Medication Schedule Reminder',
+    message: 'Your next dose of Piperacillin-Tazobactam IV infusion is scheduled for 2:00 PM.',
+    time: '25 mins ago',
+    read: false,
+    type: 'reminder',
+  },
+  {
+    id: 'notif-002',
+    patient_id: '11111111-1111-1111-1111-111111111111',
+    title: 'AST Lab Report Finalized',
+    message: 'Blood and urine cultures confirmed Escherichia coli isolate susceptible to Ceftriaxone.',
+    time: '2 hours ago',
+    read: false,
+    type: 'lab',
+  },
+  {
+    id: 'notif-003',
+    patient_id: '11111111-1111-1111-1111-111111111111',
+    title: 'Stewardship Recommendation Issued',
+    message: 'Dr. Sarah Chen requested de-escalation review to transition to oral targeted antibiotics.',
+    time: '5 hours ago',
+    read: true,
+    type: 'review',
+  },
+];
+
+export const initialReports: StewardshipReport[] = [
+  {
+    id: 'rep-001',
+    title: 'CDC 7 Core Elements Compliance Audit Q4-2026',
+    category: 'CDC Core Elements',
+    period: 'Q4 2026',
+    compliance_rate: 96.4,
+    generated_at: new Date(Date.now() - 3600 * 1000 * 48).toLocaleDateString(),
+    status: 'Ready',
+    file_size: '2.4 MB',
+    summary: 'Exceeds target benchmarks across Leadership Commitment, Pharmacy Expertise, and Tracking Action items.',
+  },
+  {
+    id: 'rep-002',
+    title: 'Annual Inpatient Antibiogram & Susceptibility Matrix',
+    category: 'Antibiogram',
+    period: '2026 Annual',
+    compliance_rate: 98.1,
+    generated_at: new Date(Date.now() - 3600 * 1000 * 120).toLocaleDateString(),
+    status: 'Ready',
+    file_size: '4.8 MB',
+    summary: 'CLSI M39-compliant hospital flora antibiogram covering 1,095 bacterial isolates.',
+  },
+  {
+    id: 'rep-003',
+    title: 'Restricted Formulary Antimicrobial Preauthorization Audit',
+    category: 'Restricted Formulary',
+    period: 'October 2026',
+    compliance_rate: 94.2,
+    generated_at: new Date(Date.now() - 3600 * 1000 * 200).toLocaleDateString(),
+    status: 'Ready',
+    file_size: '1.9 MB',
+    summary: 'Meropenem and Vancomycin preauthorization turnaround averaged 2.4 hours; 92% adherence.',
+  },
+  {
+    id: 'rep-004',
+    title: 'Hospital-Wide Days of Therapy (DOT / 1,000 Patient Days)',
+    category: 'Monthly Audit',
+    period: 'September 2026',
+    compliance_rate: 91.5,
+    generated_at: new Date(Date.now() - 3600 * 1000 * 450).toLocaleDateString(),
+    status: 'Archived',
+    file_size: '3.1 MB',
+    summary: 'Carbapenem consumption decreased 14.2% following automated renal & culture de-escalation alerts.',
+  },
+];
+
+export interface SystemSettingsConfig {
+  enableAutoAlerts: boolean;
+  restrictedFormularyApprovalRequired: boolean;
+  deescalationPromptHours: number;
+  strictRenalClearanceThreshold: number;
+  requireIndicationDocumentation: boolean;
+  enableEmailAlerts: boolean;
+  whoAwareReportingEnabled: boolean;
+}
+
+export const initialSystemSettings: SystemSettingsConfig = {
+  enableAutoAlerts: true,
+  restrictedFormularyApprovalRequired: true,
+  deescalationPromptHours: 48,
+  strictRenalClearanceThreshold: 50,
+  requireIndicationDocumentation: true,
+  enableEmailAlerts: true,
+  whoAwareReportingEnabled: true,
+};

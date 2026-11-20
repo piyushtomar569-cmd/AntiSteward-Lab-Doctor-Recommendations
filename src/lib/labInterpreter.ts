@@ -1,8 +1,13 @@
+import { sanitizeInput, validateInputLength } from './security';
+
+export type WHOAWaReCategory = 'Access' | 'Watch' | 'Reserve';
+
 export interface LabDrugResult {
   drug: string;
   status: 'Sensitive' | 'Resistant' | 'Intermediate';
   clinicalNote: string;
   tone: 'normal' | 'important' | 'attention';
+  awareCategory?: WHOAWaReCategory;
 }
 
 export interface LabInterpretationResult {
@@ -44,6 +49,28 @@ function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+export function getAWaReCategory(drugName: string): WHOAWaReCategory {
+  const d = drugName.toLowerCase();
+  if (d.includes('linezolid') || d.includes('colistin') || d.includes('tigecycline') || d.includes('daptomycin')) {
+    return 'Reserve';
+  }
+  if (
+    d.includes('meropenem') ||
+    d.includes('imipenem') ||
+    d.includes('vancomycin') ||
+    d.includes('piperacillin') ||
+    d.includes('ceftriaxone') ||
+    d.includes('ceftazidime') ||
+    d.includes('cefotaxime') ||
+    d.includes('ciprofloxacin') ||
+    d.includes('levofloxacin') ||
+    d.includes('azithromycin')
+  ) {
+    return 'Watch';
+  }
+  return 'Access';
+}
+
 function statusFromToken(token: string): 'Sensitive' | 'Resistant' | 'Intermediate' | null {
   const t = token.trim().toLowerCase();
   if (['sensitive', 'susceptible', 's'].includes(t)) return 'Sensitive';
@@ -53,7 +80,19 @@ function statusFromToken(token: string): 'Sensitive' | 'Resistant' | 'Intermedia
 }
 
 export function interpretReport(rawText: string): LabInterpretationResult {
-  const text = (rawText || '').trim();
+  const lengthCheck = validateInputLength(rawText);
+  if (!lengthCheck.valid) {
+    return {
+      isCultureReport: false,
+      organisms: [],
+      results: [],
+      summary: lengthCheck.error || 'Input exceeds maximum allowed length.',
+      simpleSummary: 'The provided report is too large to safely analyze. Please provide a standard summary.',
+      recommendations: ['Provide a concise lab summary under 50,000 characters.'],
+    };
+  }
+
+  const text = sanitizeInput(rawText || '');
   const lower = text.toLowerCase();
 
   // 1. Detect Organisms
@@ -102,7 +141,13 @@ export function interpretReport(rawText: string): LabInterpretationResult {
           tone = 'attention';
         }
 
-        drugResults.push({ drug, status, clinicalNote: note, tone });
+        drugResults.push({
+          drug,
+          status,
+          clinicalNote: note,
+          tone,
+          awareCategory: getAWaReCategory(drug),
+        });
       }
     }
   }

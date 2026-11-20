@@ -1,6 +1,22 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
-import type { Alert, CaseReview, Page, Patient, Prescription, Profile, QuizQuestion, Role } from '@/lib/types';
+import type {
+  Alert,
+  CaseReview,
+  Page,
+  Patient,
+  PatientAppointment,
+  PatientNotification,
+  Prescription,
+  Profile,
+  QuizQuestion,
+  Role,
+  StewardshipReport,
+} from '@/lib/types';
+import {
+  sanitizeInput,
+  validateFileUpload,
+} from '@/lib/security';
 import {
   initialPatients,
   initialPrescriptions,
@@ -8,21 +24,45 @@ import {
   initialAlerts,
   initialQuestions,
   initialProfiles,
+  initialAppointments,
+  initialNotifications,
+  initialReports,
 } from '@/lib/initialData';
 import { interpretReport, sampleReports, type LabInterpretationResult } from '@/lib/labInterpreter';
 import { AuthScreen } from '@/components/AuthScreen';
+import {
+  GuidelinesModal,
+  AntibiogramView,
+  PatientsView,
+  DoctorProfileView,
+  PatientDashboardView,
+  PatientPrescriptionsView,
+  PatientAppointmentsView,
+  PatientRecommendationsView,
+  PatientRecordsView,
+  PatientNotificationsView,
+  PatientProfileView,
+  AdminDashboardView,
+  AdminUsersView,
+  AdminDoctorsView,
+  AdminReportsView,
+  AdminSettingsView,
+  AdminProfileView,
+} from '@/components/PortalViews';
 import {
   Activity,
   AlertTriangle,
   BarChart3,
   Bell,
   BookOpen,
+  Calendar,
   Check,
   ChevronRight,
   ClipboardList,
   Clock3,
   FilePlus2,
   FlaskConical,
+  Heart,
   LayoutDashboard,
   Menu,
   Pill,
@@ -51,19 +91,48 @@ import {
   LogOut,
 } from 'lucide-react';
 
-const navItems: { id: Page; label: string; icon: typeof LayoutDashboard }[] = [
+const doctorNavItems: { id: Page; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+  { id: 'patients', label: 'Patient Records', icon: Users },
   { id: 'prescriptions', label: 'Prescriptions', icon: Pill },
-  { id: 'reviews', label: 'Case reviews', icon: ClipboardList },
-  { id: 'alerts', label: 'Alerts', icon: Bell },
-  { id: 'learning', label: 'Learning', icon: BookOpen },
-  { id: 'leaderboard', label: 'Leaderboard', icon: Trophy },
-  { id: 'analytics', label: 'Hospital analytics', icon: BarChart3 },
+  { id: 'reviews', label: 'Case Reviews', icon: ClipboardList },
+  { id: 'antibiogram', label: 'Antibiogram', icon: FlaskConical },
+  { id: 'alerts', label: 'Clinical Alerts', icon: Bell },
   { id: 'lab-report', label: 'AI Lab Report', icon: FileText },
+  { id: 'analytics', label: 'Hospital Analytics', icon: BarChart3 },
+  { id: 'doctor-profile', label: 'Doctor Profile', icon: UserRound },
 ];
 
+const patientNavItems: { id: Page; label: string; icon: typeof LayoutDashboard }[] = [
+  { id: 'patient-dashboard', label: 'Patient Dashboard', icon: LayoutDashboard },
+  { id: 'patient-prescriptions', label: 'My Prescriptions', icon: Pill },
+  { id: 'patient-records', label: 'My Medical Records', icon: FileText },
+  { id: 'patient-recommendations', label: 'Stewardship Guidance', icon: Sparkles },
+  { id: 'patient-notifications', label: 'Notifications', icon: Bell },
+  { id: 'patient-appointments', label: 'Follow-up Visits', icon: Calendar },
+  { id: 'patient-profile', label: 'My Profile', icon: UserRound },
+];
+
+const adminNavItems: { id: Page; label: string; icon: typeof LayoutDashboard }[] = [
+  { id: 'admin-dashboard', label: 'Admin Dashboard', icon: LayoutDashboard },
+  { id: 'admin-users', label: 'User Management', icon: Users },
+  { id: 'admin-doctors', label: 'Doctor Management', icon: Stethoscope },
+  { id: 'admin-patients', label: 'Patient Census', icon: UserRound },
+  { id: 'admin-reports', label: 'Stewardship Reports', icon: FileText },
+  { id: 'admin-settings', label: 'System Settings', icon: ShieldCheck },
+  { id: 'admin-profile', label: 'Admin Profile', icon: ClipboardList },
+];
+
+const getNavItemsForRole = (currentRole: Role) => {
+  if (currentRole === 'patient') return patientNavItems;
+  if (currentRole === 'admin') return adminNavItems;
+  return doctorNavItems;
+};
+
 const demoProfile = (role: Role): Profile => {
-  return role === 'admin' ? initialProfiles[1] : initialProfiles[0];
+  if (role === 'patient') return initialProfiles[2];
+  if (role === 'admin') return initialProfiles[1];
+  return initialProfiles[0];
 };
 
 function App() {
@@ -76,6 +145,10 @@ function App() {
   const [reviews, setReviews] = useState<CaseReview[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
+  const [appointments, setAppointments] = useState<PatientAppointment[]>(initialAppointments);
+  const [notifications, setNotifications] = useState<PatientNotification[]>(initialNotifications);
+  const [reports] = useState<StewardshipReport[]>(initialReports);
+  const [showGuidelinesModal, setShowGuidelinesModal] = useState<boolean>(false);
   const [loading, setLoading] = useState(true);
   const [isLiveBackend, setIsLiveBackend] = useState(false);
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('antisteward-theme') === 'dark');
@@ -233,14 +306,6 @@ function App() {
     void loadData();
   }, []);
 
-  const switchRole = (nextRole: Role) => {
-    setRole(nextRole);
-    setProfile((prev) => ({
-      ...prev,
-      role: nextRole,
-    }));
-  };
-
   const handleLogout = async () => {
     try {
       if (isSupabaseConfigured()) {
@@ -300,6 +365,7 @@ function App() {
   const content = () => {
     if (loading) return <LoadingState />;
     switch (page) {
+      // Doctor Pages
       case 'overview':
         return (
           <Overview
@@ -310,6 +376,14 @@ function App() {
             alerts={alerts}
             patients={patients}
             onNavigate={setPage}
+          />
+        );
+      case 'patients':
+      case 'admin-patients':
+        return (
+          <PatientsView
+            patients={patients}
+            onNewPrescription={() => setPage('prescriptions')}
           />
         );
       case 'prescriptions':
@@ -330,6 +404,8 @@ function App() {
             onRefresh={loadData}
           />
         );
+      case 'antibiogram':
+        return <AntibiogramView />;
       case 'alerts':
         return (
           <Alerts
@@ -343,9 +419,89 @@ function App() {
       case 'leaderboard':
         return <Leaderboard profile={profile} />;
       case 'analytics':
+      case 'admin-analytics':
         return <Analytics prescriptions={prescriptions} />;
       case 'lab-report':
         return <LabReportInterpreter />;
+      case 'doctor-profile':
+        return <DoctorProfileView profile={profile} />;
+
+      // Patient Pages
+      case 'patient-dashboard':
+        return (
+          <PatientDashboardView
+            patient={patients[0] || initialPatients[0]}
+            prescriptions={prescriptions.filter((p) => p.patient_id === (patients[0]?.id || initialPatients[0].id))}
+            appointments={appointments}
+            notifications={notifications}
+            onNavigate={setPage}
+          />
+        );
+      case 'patient-prescriptions':
+        return (
+          <PatientPrescriptionsView
+            prescriptions={prescriptions.filter((p) => p.patient_id === (patients[0]?.id || initialPatients[0].id))}
+          />
+        );
+      case 'patient-history':
+      case 'patient-records':
+        return <PatientRecordsView patient={patients[0] || initialPatients[0]} />;
+      case 'patient-recommendations':
+        return <PatientRecommendationsView />;
+      case 'patient-notifications':
+        return (
+          <PatientNotificationsView
+            notifications={notifications}
+            onMarkAsRead={(id) =>
+              setNotifications((prev) =>
+                prev.map((n) => (n.id === id ? { ...n, read: true } : n))
+              )
+            }
+          />
+        );
+      case 'patient-appointments':
+        return (
+          <PatientAppointmentsView
+            appointments={appointments}
+            onBookAppointment={(newApt) => setAppointments((prev) => [newApt, ...prev])}
+          />
+        );
+      case 'patient-profile':
+        return <PatientProfileView patient={patients[0] || initialPatients[0]} />;
+
+      // Admin Pages
+      case 'admin-dashboard':
+        return (
+          <AdminDashboardView
+            reports={reports}
+            prescriptions={prescriptions}
+            patients={patients}
+            onNavigate={setPage}
+          />
+        );
+      case 'admin-users':
+        return <AdminUsersView />;
+      case 'admin-doctors':
+        return <AdminDoctorsView />;
+      case 'admin-reports':
+        return <AdminReportsView reports={reports} />;
+      case 'admin-settings':
+        return <AdminSettingsView />;
+      case 'admin-profile':
+        return <AdminProfileView profile={profile} />;
+
+      default:
+        return (
+          <Overview
+            profile={profile}
+            role={role}
+            prescriptions={prescriptions}
+            reviews={reviews}
+            alerts={alerts}
+            patients={patients}
+            onNavigate={setPage}
+          />
+        );
     }
   };
 
@@ -358,17 +514,30 @@ function App() {
       <AuthScreen
         onAuthenticated={(userProfile) => {
           setProfile(userProfile);
-          setRole(userProfile.role || 'doctor');
+          const userRole = userProfile.role || 'doctor';
+          setRole(userRole);
           setIsAuthenticated(true);
+          if (userRole === 'patient') {
+            setPage('patient-dashboard');
+          } else if (userRole === 'admin') {
+            setPage('admin-dashboard');
+          } else {
+            setPage('overview');
+          }
         }}
         darkMode={darkMode}
       />
     );
   }
 
+  const activeNavItems = getNavItemsForRole(role);
+
   return (
     <div className={`app-shell ${darkMode ? 'dark-theme' : ''}`}>
-      <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
+      <a href="#main-content" className="skip-link">
+        Skip to main clinical workspace
+      </a>
+      <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`} aria-label="Clinical Navigation">
         <div className="brand">
           <div className="brand-mark">
             <ShieldCheck size={21} />
@@ -378,12 +547,14 @@ function App() {
             <span>Clinical intelligence</span>
           </div>
         </div>
-        <div className="workspace-label">WORKSPACE</div>
-        <nav>
-          {navItems.map((item) => {
+        <div className="workspace-label">
+          {role.toUpperCase()} WORKSPACE
+        </div>
+        <nav aria-label="Primary Navigation">
+          {activeNavItems.map((item) => {
             const Icon = item.icon;
             const count =
-              item.id === 'alerts'
+              item.id === 'alerts' || item.id === 'patient-notifications'
                 ? unresolvedAlerts.length
                 : item.id === 'reviews'
                 ? pendingReviews.length
@@ -415,7 +586,11 @@ function App() {
             </div>
             <Check size={16} className="protocol-check" />
           </div>
-          <button className="support-link">
+          <button
+            className="support-link"
+            onClick={() => setShowGuidelinesModal(true)}
+            aria-label="View stewardship clinical guidelines"
+          >
             <FlaskConical size={16} /> Stewardship guidelines
           </button>
           <button
@@ -428,8 +603,8 @@ function App() {
           </button>
         </div>
       </aside>
-      <main className="main-area">
-        <header className="topbar">
+      <main id="main-content" className="main-area" tabIndex={-1}>
+        <header className="topbar" role="banner">
           <button
             className="mobile-menu"
             onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -440,11 +615,17 @@ function App() {
           <div className="breadcrumb">
             <span>AntiSteward</span>
             <ChevronRight size={14} />
-            <strong>{navItems.find((item) => item.id === page)?.label}</strong>
+            <strong>{activeNavItems.find((item) => item.id === page)?.label || 'Workspace'}</strong>
           </div>
           <div className="top-actions">
             <div
               className={`backend-badge ${isLiveBackend ? 'live' : 'demo'}`}
+              role="status"
+              aria-label={
+                isLiveBackend
+                  ? 'Connected to live Supabase database'
+                  : 'Operating in reliable clinical demonstration mode'
+              }
               title={
                 isLiveBackend
                   ? 'Connected to live Supabase database'
@@ -457,6 +638,7 @@ function App() {
             <button
               className="theme-toggle"
               onClick={() => setDarkMode(!darkMode)}
+              aria-label={darkMode ? 'Switch to light color theme' : 'Switch to dark color theme'}
               title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
             >
               {darkMode ? <Sun size={17} /> : <Moon size={17} />}
@@ -464,31 +646,35 @@ function App() {
             </button>
             <button
               className="icon-button"
-              onClick={() => setPage('alerts')}
+              onClick={() => setPage(role === 'patient' ? 'patient-notifications' : 'alerts')}
               aria-label="View alerts"
             >
               <Bell size={19} />
               {unresolvedAlerts.length > 0 && <i>{unresolvedAlerts.length}</i>}
             </button>
-            <div className="role-switch">
-              <button
-                className={role === 'doctor' ? 'selected' : ''}
-                onClick={() => switchRole('doctor')}
-              >
-                <Stethoscope size={14} /> Doctor
-              </button>
-              <button
-                className={role === 'admin' ? 'selected' : ''}
-                onClick={() => switchRole('admin')}
-              >
-                <ShieldCheck size={14} /> Admin
-              </button>
+
+            {/* Role Portal Badge (Replaces Topbar Role Switcher) */}
+            <div className={`role-portal-badge ${role}`} title={`${role.toUpperCase()} PORTAL ACTIVE`}>
+              {role === 'doctor' ? (
+                <>
+                  <Stethoscope size={14} /> <span>Doctor Portal</span>
+                </>
+              ) : role === 'patient' ? (
+                <>
+                  <Heart size={14} /> <span>Patient Portal</span>
+                </>
+              ) : (
+                <>
+                  <ShieldCheck size={14} /> <span>Admin Portal</span>
+                </>
+              )}
             </div>
+
             <div className="profile-chip">
               <div className="avatar" style={{ background: profile.avatar_color }}>
                 {profile.full_name
                   .split(' ')
-                  .slice(1)
+                  .slice(profile.full_name.startsWith('Dr.') ? 1 : 0)
                   .map((n) => n[0])
                   .join('')
                   .slice(0, 2)}
@@ -510,6 +696,11 @@ function App() {
           </div>
         </header>
         <div className="page-content">{content()}</div>
+
+        <GuidelinesModal
+          isOpen={showGuidelinesModal}
+          onClose={() => setShowGuidelinesModal(false)}
+        />
       </main>
     </div>
   );
@@ -840,6 +1031,7 @@ function ActivityRow({
 function LabReportInterpreter() {
   const [tab, setTab] = useState<'upload' | 'text' | 'audio'>('upload');
   const [file, setFile] = useState<File | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [reportText, setReportText] = useState('');
   const [audioText, setAudioText] = useState('');
   const [analyzing, setAnalyzing] = useState(false);
@@ -979,19 +1171,41 @@ function LabReportInterpreter() {
           <div className="lab-drop">
             <Upload size={30} />
             <h3>Drop your culture or lab report here</h3>
-            <p>PDF, JPG, PNG or plain text · Max 10 MB</p>
+            <p>PDF, JPG, PNG, CSV, JSON, HL7 or plain text · Max 5 MB</p>
+            {uploadError && (
+              <div className="auth-alert error" style={{ margin: '10px 0', maxWidth: '450px' }}>
+                <AlertCircle size={16} />
+                <span>{uploadError}</span>
+              </div>
+            )}
             <label className="primary-button">
               <Upload size={16} /> Choose file
               <input
                 type="file"
-                accept=".pdf,.jpg,.jpeg,.png,.txt"
+                accept=".pdf,.jpg,.jpeg,.png,.txt,.csv,.json,.hl7"
                 hidden
                 onChange={(e) => {
                   const selectedFile = e.target.files?.[0] ?? null;
+                  if (!selectedFile) return;
+                  const validation = validateFileUpload(selectedFile);
+                  if (!validation.valid) {
+                    setUploadError(validation.error || 'Invalid file uploaded.');
+                    setFile(null);
+                    return;
+                  }
+                  setUploadError(null);
                   setFile(selectedFile);
-                  if (selectedFile && selectedFile.type.includes('text')) {
+                  if (
+                    selectedFile.type.includes('text') ||
+                    selectedFile.name.endsWith('.txt') ||
+                    selectedFile.name.endsWith('.csv') ||
+                    selectedFile.name.endsWith('.json')
+                  ) {
                     const reader = new FileReader();
-                    reader.onload = (ev) => setReportText(String(ev.target?.result ?? ''));
+                    reader.onload = (ev) => {
+                      const raw = String(ev.target?.result ?? '');
+                      setReportText(sanitizeInput(raw));
+                    };
                     reader.readAsText(selectedFile);
                   }
                 }}
@@ -1455,12 +1669,12 @@ function PrescriptionForm({
       id: `rx-${Date.now()}`,
       patient_id: form.patient_id,
       prescriber_id: profile.id,
-      drug_name: form.drug_name,
-      dose: form.dose,
-      route: form.route,
-      frequency: form.frequency,
-      duration_days: form.duration_days,
-      indication: form.indication,
+      drug_name: sanitizeInput(form.drug_name),
+      dose: sanitizeInput(form.dose),
+      route: sanitizeInput(form.route),
+      frequency: sanitizeInput(form.frequency),
+      duration_days: Number(form.duration_days) || 7,
+      indication: sanitizeInput(form.indication),
       status: 'active',
       is_restricted: isRestricted,
       restriction_reason: isRestricted ? 'Restricted broad-spectrum antimicrobial order' : '',
